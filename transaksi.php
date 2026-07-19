@@ -18,6 +18,8 @@ function bacaJsonAman($path, $default = []) {
     return is_array($decoded) ? $decoded : $default;
 }
 
+
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_transaksi'])) {
     $input_peminjam = isset($_POST['nrp']) ? trim($_POST['nrp']) : '';
     $aksi = isset($_POST['aksi_transaksi']) ? trim($_POST['aksi_transaksi']) : '';
@@ -264,7 +266,7 @@ $daftar_kegiatan = file_exists($file_pinjaman)
     ? (json_decode(file_get_contents($file_pinjaman), true) ?: [])
     : [
         ["nama" => "Rutin / Apel Pagi"],
-        ["nama" => "Piket Jaga"],
+        ["nama" => "Piket Mako"],
         ["nama" => "Dinas Luar"],
         ["nama" => "Patroli"],
         ["nama" => "Dinas Operasi"]
@@ -273,7 +275,7 @@ $daftar_kegiatan = file_exists($file_pinjaman)
 if (!is_array($daftar_kegiatan) || empty($daftar_kegiatan)) {
     $daftar_kegiatan = [
         ["nama" => "Rutin / Apel Pagi"],
-        ["nama" => "Piket Jaga"],
+        ["nama" => "Piket Mako"],
         ["nama" => "Dinas Luar"],
         ["nama" => "Patroli"],
         ["nama" => "Dinas Operasi"]
@@ -308,7 +310,7 @@ if (!is_array($daftar_kegiatan) || empty($daftar_kegiatan)) {
     <div class="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3 flex-shrink-0">
         <div>
             <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Sirkulasi Barang</h1>
-            <p class="text-sm md:text-base text-gray-500 mt-1">Mode Cerdas: Apel/Piket (1 Mag) & Patroli/Dinas Luar (3 Mag + Amunisi).</p>
+            <p class="text-sm md:text-base text-gray-500 mt-1">Mode Cerdas: Apel Pagi (1 Magazen) & Dinas Luar / Patroli (3 Magazen + Amunisi).</p>
         </div>
     </div>
 
@@ -508,18 +510,89 @@ if (!is_array($daftar_kegiatan) || empty($daftar_kegiatan)) {
             });
         }
     }
+    
+    function cariLogistikPaket(predicate, qtyMinimal = 1) {
+        return dbLogistik.find(l => {
+            const nama = (l.nama_barang || '').toLowerCase();
+            const stok = parseInt(l.stok_tersedia || 0);
+            return predicate(nama) && stok >= qtyMinimal;
+        });
+    }
+
+    function getPaketFastTrack(kegiatan) {
+        const val = (kegiatan || '').toLowerCase().trim();
+    
+        const isApel = val.includes('apel');
+        const isDinasLuar = val.includes('dinas luar');
+        const isPatroli = val.includes('patroli');
+    
+        if (!isApel && !isDinasLuar && !isPatroli) {
+            return { aktif: false, nama: '', items: [] };
+        }
+    
+        if (isApel) {
+            return {
+                aktif: true,
+                nama: 'apel',
+                items: [
+                    {
+                        key: 'magazen',
+                        qty: 1,
+                        label: 'Magazen 101/102',
+                        find: (nama) => nama.includes('magazen') && nama.includes('101/102')
+                    }
+                ]
+            };
+        }
+    
+        if (isDinasLuar || isPatroli) {
+            return {
+                aktif: true,
+                nama: isDinasLuar ? 'dinas luar' : 'patroli',
+                items: [
+                    {
+                        key: 'magazen',
+                        qty: 3,
+                        label: 'Magazen 101/102',
+                        find: (nama) => nama.includes('magazen') && nama.includes('101/102')
+                    },
+                    {
+                        key: 'tj',
+                        qty: 20,
+                        label: 'Call 5.56x45 mm 5 Tj',
+                        find: (nama) => nama.includes('call') && nama.includes('5.56x45') && nama.includes('5 tj')
+                    },
+                    {
+                        key: 'karet',
+                        qty: 37,
+                        label: 'Call 5.56x45 mm Karet',
+                        find: (nama) => nama.includes('call') && nama.includes('5.56x45') && nama.includes('karet')
+                    },
+                    {
+                        key: 'hampa',
+                        qty: 3,
+                        label: 'Call 5.56x45 mm Hampa',
+                        find: (nama) => nama.includes('call') && nama.includes('5.56x45') && nama.includes('hampa')
+                    }
+                ]
+            };
+        }
+    
+        return { aktif: false, nama: '', items: [] };
+    }
 
     function cekModeKegiatan() {
-        let val = document.getElementById('jenis_pinjaman').value.toLowerCase();
-        modeFastTrack = val.includes('apel') || val.includes('rutin') || val.includes('dinas luar') || val.includes('patroli') || val.includes('piket');
-
+        let val = document.getElementById('jenis_pinjaman').value;
+        let paket = getPaketFastTrack(val);
+        modeFastTrack = paket.aktif;
+    
         resetStateScan();
         
         let indikator = document.getElementById('indikator-mode');
         let boxNrp = document.getElementById('box-input-nrp');
         let boxManual = document.getElementById('box-manual');
         let btnEksekusi = document.getElementById('btn-eksekusi');
-
+    
         if (modeFastTrack) {
             indikator.classList.remove('hidden');
             boxNrp.classList.add('hidden');
@@ -533,7 +606,7 @@ if (!is_array($daftar_kegiatan) || empty($daftar_kegiatan)) {
             boxManual.classList.remove('hidden');
             btnEksekusi.classList.remove('hidden');
         }
-
+    
         document.getElementById('input-scanner').focus();
     }
 
@@ -581,27 +654,35 @@ if (!is_array($daftar_kegiatan) || empty($daftar_kegiatan)) {
                 bunyikanError();
                 return Swal.fire('Ditolak!', 'Senjata sedang perbaikan.', 'error');
             }
-
+        
             if (aksi === 'keluar' && senjataMatch.status_lokasi !== 'Di Gudang') {
                 sedangProsesScan = false;
                 bunyikanError();
                 return Swal.fire('Ditolak!', 'Senjata sedang dibawa bertugas.', 'error');
             }
-
+        
             if (aksi === 'masuk' && senjataMatch.status_lokasi === 'Di Gudang') {
                 sedangProsesScan = false;
                 bunyikanError();
                 return Swal.fire('Ditolak!', 'Senjata sudah di gudang.', 'error');
             }
-
+        
             let pemilik = dbAnggota.find(a => a.id_anggota === senjataMatch.id_pemegang_tetap);
             if (!pemilik) {
                 sedangProsesScan = false;
                 bunyikanError();
                 return Swal.fire('Error', 'Pemilik senjata tidak terdata!', 'error');
             }
-
+        
             if (modeFastTrack) {
+                let paket = getPaketFastTrack(kegiatan);
+        
+                if (!paket.aktif) {
+                    sedangProsesScan = false;
+                    bunyikanError();
+                    return Swal.fire('Mode tidak valid', 'Kegiatan ini tidak termasuk Fast Track.', 'error');
+                }
+        
                 let fastCart = [
                     {
                         id: senjataMatch.nomor_seri,
@@ -611,77 +692,56 @@ if (!is_array($daftar_kegiatan) || empty($daftar_kegiatan)) {
                         keterangan: pemilik.nama
                     }
                 ];
-                
-                let isApelAtauPiket =
-                    kegiatan.toLowerCase().includes('apel') ||
-                    kegiatan.toLowerCase().includes('rutin') ||
-                    kegiatan.toLowerCase().includes('piket');
-
-                let magQty = isApelAtauPiket ? 1 : 3;
-                
-                let magazen = dbLogistik.find(l => l.id_barang === "LOG-177614982830");
-                if (magazen) {
+        
+                let itemKurang = [];
+        
+                for (const rule of paket.items) {
+                    let barang = cariLogistikPaket(rule.find, rule.qty);
+        
+                    if (!barang) {
+                        itemKurang.push(rule.label);
+                        continue;
+                    }
+        
                     fastCart.push({
-                        id: magazen.id_barang,
-                        nama: magazen.nama_barang,
-                        qty: magQty,
+                        id: barang.id_barang,
+                        nama: barang.nama_barang,
+                        qty: rule.qty,
                         tipe: 'logistik'
                     });
                 }
-
-                if (!isApelAtauPiket) {
-                    let tj = dbLogistik.find(l => (l.nama_barang || '').toLowerCase().includes('4 tj'));
-                    if (tj) {
-                        fastCart.push({
-                            id: tj.id_barang,
-                            nama: tj.nama_barang,
-                            qty: 20,
-                            tipe: 'logistik'
-                        });
-                    }
-                    
-                    let karet = dbLogistik.find(l => (l.nama_barang || '').toLowerCase().includes('karet'));
-                    if (karet) {
-                        fastCart.push({
-                            id: karet.id_barang,
-                            nama: karet.nama_barang,
-                            qty: 37,
-                            tipe: 'logistik'
-                        });
-                    }
-                    
-                    let hampa = dbLogistik.find(l => (l.nama_barang || '').toLowerCase().includes('hampa'));
-                    if (hampa) {
-                        fastCart.push({
-                            id: hampa.id_barang,
-                            nama: hampa.nama_barang,
-                            qty: 3,
-                            tipe: 'logistik'
-                        });
-                    }
+        
+                if (itemKurang.length > 0) {
+                    sedangProsesScan = false;
+                    bunyikanError();
+                    return Swal.fire(
+                        'Paket tidak lengkap',
+                        'Fast Track gagal. Item berikut tidak ditemukan atau stoknya tidak cukup: ' + itemKurang.join(', '),
+                        'error'
+                    );
                 }
-                
+        
                 kirimAjaxFastTrack(pemilik.nrp, aksi, kegiatan, fastCart, pemilik.nama);
                 return;
-            } else {
-                let inputNrp = document.getElementById('input-nrp');
-                if (inputNrp.value === '') {
-                    inputNrp.value = pemilik.nama;
-                    cekAnggota(pemilik.nrp);
-                }
-
-                tambahKeKeranjang(
-                    senjataMatch.nomor_seri,
-                    senjataMatch.jenis_senjata,
-                    1,
-                    1,
-                    'senjata',
-                    pemilik.nama
-                );
-
-                sedangProsesScan = false;
-                return;
             }
+        
+            let inputNrp = document.getElementById('input-nrp');
+            if (inputNrp.value === '') {
+                inputNrp.value = pemilik.nama;
+                cekAnggota(pemilik.nrp);
+            }
+        
+            tambahKeKeranjang(
+                senjataMatch.nomor_seri,
+                senjataMatch.jenis_senjata,
+                1,
+                1,
+                'senjata',
+                pemilik.nama
+            );
+        
+            sedangProsesScan = false;
+            return;
         }
 
         let logistikMatch = dbLogistik.find(l => (l.id_barang || '').toUpperCase() === kode);
