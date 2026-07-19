@@ -12,123 +12,145 @@ $logistik_file = 'data/logistik_umum.json';
 $anggota_file = 'data/anggota.json';
 $riwayat_file = 'data/riwayat.json';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['tambah_personil'])) {
-    $id_baru = $db->tambahAnggota($_POST['nama'], $_POST['nrp'], $_POST['satuan']);
-    if (!empty($_POST['nomor_seri']) && !empty($_POST['jenis_senjata'])) {
-        $db->tambahSenjata($_POST['nomor_seri'], $_POST['jenis_senjata'], $id_baru);
-    }
-    
-    // --- BYPASS: PINJAMAN TETAP (DARI MASTER BARANG) ---
-    $logistik_data = json_decode(file_get_contents($logistik_file), true) ?? [];
-    $anggota_data = json_decode(file_get_contents($anggota_file), true) ?? [];
-    $riwayat_data = json_decode(file_get_contents($riwayat_file), true) ?? [];
-    $waktu = date('Y-m-d H:i:s');
-    $tx_id = "TRX-PT-" . time();
-
-    $new_pt = [];
-    if (isset($_POST['pt_id']) && is_array($_POST['pt_id'])) {
-        for ($i = 0; $i < count($_POST['pt_id']); $i++) {
-            $pt_id = $_POST['pt_id'][$i];
-            $pt_qty = (int)$_POST['pt_qty'][$i];
-            
-            if (!empty($pt_id) && $pt_qty > 0) {
-                foreach ($logistik_data as &$l) {
-                    if ($l['id_barang'] == $pt_id) {
-                        $l['stok_tersedia'] -= $pt_qty; // Potong Stok
-                        $new_pt[] = [
-                            'id_barang' => $pt_id,
-                            'nama_barang' => $l['nama_barang'],
-                            'qty' => $pt_qty
-                        ];
-                        // Catat ke log riwayat
-                        array_unshift($riwayat_data, [
-                            "id_transaksi" => $tx_id, "waktu" => $waktu, "id_anggota" => $id_baru,
-                            "nama_personil" => $_POST['nama'],
-                            "jenis_transaksi" => "Keluar Gudang", 
-                            "item" => $pt_qty . "x " . $l['nama_barang'], "keterangan" => "[Pinjaman Tetap]"
-                        ]);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    foreach($anggota_data as &$a) {
-        if($a['id_anggota'] == $id_baru) {
-            $a['pangkat'] = $_POST['pangkat'] ?? '';
-            $a['size_baju'] = $_POST['size_baju'] ?? '';
-            $a['size_celana'] = $_POST['size_celana'] ?? '';
-            $a['size_tutup_kepala'] = $_POST['size_tutup_kepala'] ?? '';
-            $a['size_sepatu'] = $_POST['size_sepatu'] ?? '';
-            $a['no_hp'] = $_POST['no_hp'] ?? '';
-            $a['pinjaman_tetap'] = $new_pt; // Array objek pinjaman
-            break;
-        }
-    }
-    
-    file_put_contents($logistik_file, json_encode($logistik_data, JSON_PRETTY_PRINT));
-    file_put_contents($anggota_file, json_encode($anggota_data, JSON_PRETTY_PRINT));
-    file_put_contents($riwayat_file, json_encode($riwayat_data, JSON_PRETTY_PRINT));
-
-    header("Location: personil.php?pesan=tambah_sukses");
+function redirectDenganPesan($pesan) {
+    header("Location: personil.php?pesan=" . urlencode($pesan));
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
-    $db->updateAnggotaDanSenjata($_POST['id_anggota'], $_POST['nama'], $_POST['nrp'], $_POST['satuan'], $_POST['jenis_senjata'], $_POST['nomor_seri']);
-    
-    // --- BYPASS: UPDATE PINJAMAN TETAP (RESTORE & RE-DEDUCT) ---
+function extractNamaKegiatan($text) {
+    if (preg_match('/\[(.*?)\]/', (string)$text, $matches)) {
+        return trim($matches[1]);
+    }
+    return null;
+}
+
+function getKegiatanAktifPerPersonil($riwayat) {
+    $statusTerakhir = [];
+    $hasil = [];
+
+    foreach ($riwayat as $log) {
+        $idAnggota = trim((string)($log['id_anggota'] ?? ''));
+        $jenis = trim((string)($log['jenis_transaksi'] ?? ''));
+        $waktu = trim((string)($log['waktu'] ?? ''));
+        $keterangan = trim((string)($log['keterangan'] ?? ''));
+        $namaKegiatan = extractNamaKegiatan($keterangan);
+
+        if ($idAnggota === '' || $waktu === '' || $namaKegiatan === null || $namaKegiatan === '') {
+            continue;
+        }
+
+        $key = $idAnggota . '||' . $namaKegiatan;
+
+        if (
+            !isset($statusTerakhir[$key]) ||
+            strtotime($waktu) > strtotime($statusTerakhir[$key]['waktu'])
+        ) {
+            $statusTerakhir[$key] = [
+                'id_anggota' => $idAnggota,
+                'nama_kegiatan' => $namaKegiatan,
+                'jenis_transaksi' => $jenis,
+                'waktu' => $waktu
+            ];
+        }
+    }
+
+    foreach ($statusTerakhir as $item) {
+        if ($item['jenis_transaksi'] === 'Keluar Gudang') {
+            $hasil[$item['id_anggota']] = $item['nama_kegiatan'];
+        }
+    }
+
+    return $hasil;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['tambah_personil'])) {
     $logistik_data = json_decode(file_get_contents($logistik_file), true) ?? [];
     $anggota_data = json_decode(file_get_contents($anggota_file), true) ?? [];
     $riwayat_data = json_decode(file_get_contents($riwayat_file), true) ?? [];
 
-    $old_pt = [];
-    foreach($anggota_data as $a) {
-        if($a['id_anggota'] == $_POST['id_anggota']) {
-            $old_pt = isset($a['pinjaman_tetap']) && is_array($a['pinjaman_tetap']) ? $a['pinjaman_tetap'] : [];
-            break;
-        }
-    }
+    $nama_input = trim($_POST['nama'] ?? '');
+    $nrp_input = trim($_POST['nrp'] ?? '');
+    $satuan_input = trim($_POST['satuan'] ?? '');
 
-    // 1. KEMBALIKAN STOK LAMA DULU KE GUDANG (Reset)
-    foreach($old_pt as $opt) {
-        foreach($logistik_data as &$l) {
-            if($l['id_barang'] == $opt['id_barang']) {
-                $l['stok_tersedia'] += (int)$opt['qty'];
-                if ($l['stok_tersedia'] > $l['total_stok']) $l['stok_tersedia'] = $l['total_stok'];
-                break;
+    $pt_ids = $_POST['pt_id'] ?? [];
+    $pt_qtys = $_POST['pt_qty'] ?? [];
+
+    // Validasi stok pinjaman tetap SEBELUM simpan anggota
+    if (is_array($pt_ids) && is_array($pt_qtys)) {
+        for ($i = 0; $i < count($pt_ids); $i++) {
+            $pt_id = trim($pt_ids[$i] ?? '');
+            $pt_qty = (int)($pt_qtys[$i] ?? 0);
+
+            if ($pt_id === '' || $pt_qty <= 0) {
+                continue;
             }
-        }
-    }
 
-    // 2. POTONG STOK BARU DARI FORM
-    $new_pt = [];
-    $waktu = date('Y-m-d H:i:s');
-    $tx_id = "TRX-PT-UPD-" . time();
-    if (isset($_POST['pt_id']) && is_array($_POST['pt_id'])) {
-        for ($i = 0; $i < count($_POST['pt_id']); $i++) {
-            $pt_id = $_POST['pt_id'][$i];
-            $pt_qty = (int)$_POST['pt_qty'][$i];
-            
-            if (!empty($pt_id) && $pt_qty > 0) {
-                foreach($logistik_data as &$l) {
-                    if($l['id_barang'] == $pt_id) {
-                        $l['stok_tersedia'] -= $pt_qty; // Potong Stok
-                        $new_pt[] = [
-                            'id_barang' => $pt_id,
-                            'nama_barang' => $l['nama_barang'],
-                            'qty' => $pt_qty
-                        ];
-                        break;
+            $barang_ditemukan = false;
+            foreach ($logistik_data as $l) {
+                if (($l['id_barang'] ?? '') == $pt_id) {
+                    $barang_ditemukan = true;
+                    $stok_tersedia = (int)($l['stok_tersedia'] ?? 0);
+
+                    if ($stok_tersedia < $pt_qty) {
+                        redirectDenganPesan('stok_tidak_cukup');
                     }
+                    break;
                 }
             }
+
+            if (!$barang_ditemukan) {
+                redirectDenganPesan('barang_tidak_ditemukan');
+            }
         }
     }
 
-    foreach($anggota_data as &$a) {
-        if($a['id_anggota'] == $_POST['id_anggota']) {
+    $id_baru = $db->tambahAnggota($nama_input, $nrp_input, $satuan_input);
+
+    if (!empty($_POST['nomor_seri']) && !empty($_POST['jenis_senjata'])) {
+        $db->tambahSenjata($_POST['nomor_seri'], $_POST['jenis_senjata'], $id_baru);
+    }
+
+    $waktu = date('Y-m-d H:i:s');
+    $tx_id = "TRX-PT-" . time();
+    $new_pt = [];
+
+    if (is_array($pt_ids) && is_array($pt_qtys)) {
+        for ($i = 0; $i < count($pt_ids); $i++) {
+            $pt_id = trim($pt_ids[$i] ?? '');
+            $pt_qty = (int)($pt_qtys[$i] ?? 0);
+
+            if ($pt_id === '' || $pt_qty <= 0) {
+                continue;
+            }
+
+            foreach ($logistik_data as &$l) {
+                if (($l['id_barang'] ?? '') == $pt_id) {
+                    $l['stok_tersedia'] -= $pt_qty;
+
+                    $new_pt[] = [
+                        'id_barang' => $pt_id,
+                        'nama_barang' => $l['nama_barang'],
+                        'qty' => $pt_qty
+                    ];
+
+                    array_unshift($riwayat_data, [
+                        "id_transaksi" => $tx_id,
+                        "waktu" => $waktu,
+                        "id_anggota" => $id_baru,
+                        "nama_personil" => $nama_input,
+                        "jenis_transaksi" => "Keluar Gudang",
+                        "item" => $pt_qty . "x " . $l['nama_barang'],
+                        "keterangan" => "[Pinjaman Tetap]"
+                    ]);
+                    break;
+                }
+            }
+            unset($l);
+        }
+    }
+
+    foreach ($anggota_data as &$a) {
+        if (($a['id_anggota'] ?? '') == $id_baru) {
             $a['pangkat'] = $_POST['pangkat'] ?? '';
             $a['size_baju'] = $_POST['size_baju'] ?? '';
             $a['size_celana'] = $_POST['size_celana'] ?? '';
@@ -139,7 +161,119 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
             break;
         }
     }
-    
+    unset($a);
+
+    file_put_contents($logistik_file, json_encode($logistik_data, JSON_PRETTY_PRINT));
+    file_put_contents($anggota_file, json_encode($anggota_data, JSON_PRETTY_PRINT));
+    file_put_contents($riwayat_file, json_encode($riwayat_data, JSON_PRETTY_PRINT));
+
+    header("Location: personil.php?pesan=tambah_sukses");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
+    $logistik_data = json_decode(file_get_contents($logistik_file), true) ?? [];
+    $anggota_data = json_decode(file_get_contents($anggota_file), true) ?? [];
+    $riwayat_data = json_decode(file_get_contents($riwayat_file), true) ?? [];
+
+    $id_anggota = $_POST['id_anggota'] ?? '';
+
+    $db->updateAnggotaDanSenjata(
+        $id_anggota,
+        $_POST['nama'],
+        $_POST['nrp'],
+        $_POST['satuan'],
+        $_POST['jenis_senjata'],
+        $_POST['nomor_seri']
+    );
+
+    $old_pt = [];
+    foreach ($anggota_data as $a) {
+        if (($a['id_anggota'] ?? '') == $id_anggota) {
+            $old_pt = (isset($a['pinjaman_tetap']) && is_array($a['pinjaman_tetap'])) ? $a['pinjaman_tetap'] : [];
+            break;
+        }
+    }
+
+    // 1. Simulasikan pengembalian stok lama dulu
+    foreach ($old_pt as $opt) {
+        foreach ($logistik_data as &$l) {
+            if (($l['id_barang'] ?? '') == ($opt['id_barang'] ?? '')) {
+                $l['stok_tersedia'] += (int)($opt['qty'] ?? 0);
+                if ($l['stok_tersedia'] > (int)($l['total_stok'] ?? 0)) {
+                    $l['stok_tersedia'] = (int)($l['total_stok'] ?? 0);
+                }
+                break;
+            }
+        }
+        unset($l);
+    }
+
+    $pt_ids = $_POST['pt_id'] ?? [];
+    $pt_qtys = $_POST['pt_qty'] ?? [];
+
+    // 2. Validasi stok baru setelah simulasi pengembalian
+    if (is_array($pt_ids) && is_array($pt_qtys)) {
+        for ($i = 0; $i < count($pt_ids); $i++) {
+            $pt_id = trim($pt_ids[$i] ?? '');
+            $pt_qty = (int)($pt_qtys[$i] ?? 0);
+
+            if ($pt_id === '' || $pt_qty <= 0) {
+                continue;
+            }
+
+            $barang_ditemukan = false;
+            foreach ($logistik_data as $l) {
+                if (($l['id_barang'] ?? '') == $pt_id) {
+                    $barang_ditemukan = true;
+                    $stok_tersedia = (int)($l['stok_tersedia'] ?? 0);
+
+                    if ($stok_tersedia < $pt_qty) {
+                        redirectDenganPesan('stok_tidak_cukup');
+                    }
+                    break;
+                }
+            }
+
+            if (!$barang_ditemukan) {
+                redirectDenganPesan('barang_tidak_ditemukan');
+            }
+        }
+    }
+
+    // 3. Potong stok baru
+    $new_pt = [];
+    foreach ($logistik_data as &$l) {
+        foreach ($pt_ids as $idx => $pt_id_raw) {
+            $pt_id = trim($pt_id_raw ?? '');
+            $pt_qty = (int)($pt_qtys[$idx] ?? 0);
+
+            if ($pt_id !== '' && $pt_qty > 0 && ($l['id_barang'] ?? '') == $pt_id) {
+                $l['stok_tersedia'] -= $pt_qty;
+                $new_pt[] = [
+                    'id_barang' => $pt_id,
+                    'nama_barang' => $l['nama_barang'],
+                    'qty' => $pt_qty
+                ];
+            }
+        }
+    }
+    unset($l);
+
+    foreach ($anggota_data as &$a) {
+        if (($a['id_anggota'] ?? '') == $id_anggota) {
+            $a['pangkat'] = $_POST['pangkat'] ?? '';
+            $a['size_baju'] = $_POST['size_baju'] ?? '';
+            $a['size_celana'] = $_POST['size_celana'] ?? '';
+            $a['size_tutup_kepala'] = $_POST['size_tutup_kepala'] ?? '';
+            $a['size_sepatu'] = $_POST['size_sepatu'] ?? '';
+            $a['no_hp'] = $_POST['no_hp'] ?? '';
+            $a['pinjaman_tetap'] = $new_pt;
+            break;
+        }
+    }
+    unset($a);
+
     file_put_contents($logistik_file, json_encode($logistik_data, JSON_PRETTY_PRINT));
     file_put_contents($anggota_file, json_encode($anggota_data, JSON_PRETTY_PRINT));
 
@@ -148,27 +282,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['hapus_personil'])) {
-    // KEMBALIKAN STOK PINJAMAN TETAP JIKA PERSONIL DIHAPUS
+    // Kembalikan stok pinjaman tetap jika personil dihapus
     $anggota_data = json_decode(file_get_contents($anggota_file), true) ?? [];
     $logistik_data = json_decode(file_get_contents($logistik_file), true) ?? [];
-    foreach($anggota_data as $a) {
-        if($a['id_anggota'] == $_POST['id_anggota']) {
-            if(isset($a['pinjaman_tetap']) && is_array($a['pinjaman_tetap'])){
-                foreach($a['pinjaman_tetap'] as $opt) {
-                    foreach($logistik_data as &$l) {
-                        if($l['id_barang'] == $opt['id_barang']) {
-                            $l['stok_tersedia'] += (int)$opt['qty'];
+    $id_hapus = $_POST['id_anggota'] ?? '';
+
+    foreach ($anggota_data as $a) {
+        if (($a['id_anggota'] ?? '') == $id_hapus) {
+            if (isset($a['pinjaman_tetap']) && is_array($a['pinjaman_tetap'])) {
+                foreach ($a['pinjaman_tetap'] as $opt) {
+                    $id_barang = $opt['id_barang'] ?? '';
+                    $qty_kembali = (int)($opt['qty'] ?? 0);
+
+                    if ($id_barang === '' || $qty_kembali <= 0) {
+                        continue;
+                    }
+
+                    foreach ($logistik_data as &$l) {
+                        if (($l['id_barang'] ?? '') == $id_barang) {
+                            $stok_tersedia = (int)($l['stok_tersedia'] ?? 0);
+                            $total_stok = (int)($l['total_stok'] ?? 0);
+
+                            $stok_baru = $stok_tersedia + $qty_kembali;
+                            $l['stok_tersedia'] = ($stok_baru > $total_stok) ? $total_stok : $stok_baru;
                             break;
                         }
                     }
+                    unset($l);
                 }
             }
             break;
         }
     }
+
     file_put_contents($logistik_file, json_encode($logistik_data, JSON_PRETTY_PRINT));
 
-    $db->hapusAnggota($_POST['id_anggota']);
+    $db->hapusAnggota($id_hapus);
     header("Location: personil.php?pesan=hapus_sukses");
     exit;
 }
@@ -1008,18 +1157,43 @@ unset($p);
           });
       }
 
-      <?php if(isset($_GET['pesan'])): ?>
-      document.addEventListener('DOMContentLoaded', function() {
-          let pesan = '';
-          <?php 
-              if($_GET['pesan'] == 'tambah_sukses') echo "pesan = 'Data personil baru telah masuk ke sistem.';";
-              if($_GET['pesan'] == 'edit_sukses') echo "pesan = 'Perubahan data personil telah disimpan.';";
-              if($_GET['pesan'] == 'hapus_sukses') echo "pesan = 'Data personil beserta senjatanya telah dihapus. Stok pinjaman tetap telah dikembalikan.';";
-              if($_GET['pesan'] == 'status_sukses') echo "pesan = 'Status kondisi senjata berhasil diperbarui.';";
-          ?>
-          Swal.fire({ icon: 'success', title: 'Berhasil!', text: pesan, timer: 2500, showConfirmButton: false });
-      });
-      <?php endif; ?>
+      <?php
+$pesan_get = $_GET['pesan'] ?? '';
+if ($pesan_get !== ''):
+?>
+document.addEventListener('DOMContentLoaded', function() {
+    let pesan = '';
+    let icon = 'success';
+
+    <?php
+        if ($pesan_get === 'tambah_sukses') {
+            echo "pesan = 'Data personil baru telah masuk ke sistem.';";
+        } elseif ($pesan_get === 'edit_sukses') {
+            echo "pesan = 'Perubahan data personil telah disimpan.';";
+        } elseif ($pesan_get === 'hapus_sukses') {
+            echo "pesan = 'Data personil beserta senjatanya telah dihapus. Stok pinjaman tetap telah dikembalikan.';";
+        } elseif ($pesan_get === 'status_sukses') {
+            echo "pesan = 'Status kondisi senjata berhasil diperbarui.';";
+        } elseif ($pesan_get === 'stok_tidak_cukup') {
+            echo "pesan = 'Stok logistik tidak mencukupi untuk pinjaman tetap yang dipilih.';";
+            echo "icon = 'error';";
+        } elseif ($pesan_get === 'barang_tidak_ditemukan') {
+            echo "pesan = 'Barang logistik untuk pinjaman tetap tidak ditemukan.';";
+            echo "icon = 'error';";
+        }
+    ?>
+
+    if (pesan !== '') {
+        Swal.fire({
+            icon: icon,
+            title: icon === 'success' ? 'Berhasil!' : 'Gagal!',
+            text: pesan,
+            timer: 2500,
+            showConfirmButton: false
+        });
+    }
+});
+<?php endif; ?>
   </script>
 </body>
 </html>
