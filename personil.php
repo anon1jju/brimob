@@ -11,6 +11,7 @@ $db = new LogistikDB();
 $logistik_file = 'data/logistik_umum.json';
 $anggota_file = 'data/anggota.json';
 $riwayat_file = 'data/riwayat.json';
+$jenis_pinjaman_file = 'data/jenis_pinjaman.json'; 
 
 function redirectDenganPesan($pesan) {
     header("Location: personil.php?pesan=" . urlencode($pesan));
@@ -24,37 +25,43 @@ function extractNamaKegiatan($text) {
     return null;
 }
 
+// LOGIKA FILTER KEGIATAN AKTIF PERSONIL
 function getKegiatanAktifPerPersonil($riwayat) {
-    $statusTerakhir = [];
-    $hasil = [];
+    $status_terakhir = [];
 
+    // 1. Cari tanggal paling telat (terbaru) untuk kombinasi ID Anggota & Kegiatan
     foreach ($riwayat as $log) {
-        $idAnggota = trim((string)($log['id_anggota'] ?? ''));
-        $jenis = trim((string)($log['jenis_transaksi'] ?? ''));
-        $waktu = trim((string)($log['waktu'] ?? ''));
+        $id_anggota = trim((string)($log['id_anggota'] ?? ''));
         $keterangan = trim((string)($log['keterangan'] ?? ''));
-        $namaKegiatan = extractNamaKegiatan($keterangan);
+        $jenis_transaksi = trim((string)($log['jenis_transaksi'] ?? ''));
+        $waktu = trim((string)($log['waktu'] ?? ''));
+        $nama_kegiatan = extractNamaKegiatan($keterangan);
 
-        if ($idAnggota === '' || $waktu === '' || $namaKegiatan === null || $namaKegiatan === '') {
+        if ($id_anggota === '' || $nama_kegiatan === null || $nama_kegiatan === '' || $waktu === '') {
             continue;
         }
 
-        $key = $idAnggota . '||' . $namaKegiatan;
+        // Abaikan pinjaman tetap karena bukan kegiatan dinas sementara
+        if (strtoupper($nama_kegiatan) === 'PINJAMAN TETAP') {
+            continue;
+        }
 
-        if (
-            !isset($statusTerakhir[$key]) ||
-            strtotime($waktu) > strtotime($statusTerakhir[$key]['waktu'])
-        ) {
-            $statusTerakhir[$key] = [
-                'id_anggota' => $idAnggota,
-                'nama_kegiatan' => $namaKegiatan,
-                'jenis_transaksi' => $jenis,
-                'waktu' => $waktu
+        $key = $id_anggota . '||' . $nama_kegiatan;
+        $waktu_ts = strtotime($waktu);
+
+        if (!isset($status_terakhir[$key]) || $waktu_ts >= $status_terakhir[$key]['waktu_ts']) {
+            $status_terakhir[$key] = [
+                'id_anggota' => $id_anggota,
+                'nama_kegiatan' => $nama_kegiatan,
+                'jenis_transaksi' => $jenis_transaksi,
+                'waktu_ts' => $waktu_ts
             ];
         }
     }
 
-    foreach ($statusTerakhir as $item) {
+    // 2. Hitung 1 jika kegiatan terakhir Keluar Gudang, abaikan jika Masuk Gudang
+    $hasil = [];
+    foreach ($status_terakhir as $item) {
         if ($item['jenis_transaksi'] === 'Keluar Gudang') {
             $hasil[$item['id_anggota']] = $item['nama_kegiatan'];
         }
@@ -75,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['tambah_personil'])) {
     $pt_ids = $_POST['pt_id'] ?? [];
     $pt_qtys = $_POST['pt_qty'] ?? [];
 
-    // Validasi stok pinjaman tetap SEBELUM simpan anggota
     if (is_array($pt_ids) && is_array($pt_qtys)) {
         for ($i = 0; $i < count($pt_ids); $i++) {
             $pt_id = trim($pt_ids[$i] ?? '');
@@ -195,7 +201,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
         }
     }
 
-    // 1. Simulasikan pengembalian stok lama dulu
     foreach ($old_pt as $opt) {
         foreach ($logistik_data as &$l) {
             if (($l['id_barang'] ?? '') == ($opt['id_barang'] ?? '')) {
@@ -212,7 +217,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
     $pt_ids = $_POST['pt_id'] ?? [];
     $pt_qtys = $_POST['pt_qty'] ?? [];
 
-    // 2. Validasi stok baru setelah simulasi pengembalian
     if (is_array($pt_ids) && is_array($pt_qtys)) {
         for ($i = 0; $i < count($pt_ids); $i++) {
             $pt_id = trim($pt_ids[$i] ?? '');
@@ -241,7 +245,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
         }
     }
 
-    // 3. Potong stok baru
     $new_pt = [];
     foreach ($logistik_data as &$l) {
         foreach ($pt_ids as $idx => $pt_id_raw) {
@@ -282,7 +285,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_personil'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['hapus_personil'])) {
-    // Kembalikan stok pinjaman tetap jika personil dihapus
     $anggota_data = json_decode(file_get_contents($anggota_file), true) ?? [];
     $logistik_data = json_decode(file_get_contents($logistik_file), true) ?? [];
     $id_hapus = $_POST['id_anggota'] ?? '';
@@ -335,10 +337,21 @@ $json_riwayat = json_encode($semua_riwayat);
 $data_logistik = json_decode(file_get_contents('data/logistik_umum.json'), true) ?? [];
 $json_logistik = json_encode($data_logistik);
 
-// LACAK BARANG DIPINJAM (DEEP TRACKING)
+$jenis_pinjaman_data = json_decode(file_get_contents($jenis_pinjaman_file), true) ?? [];
+$kegiatan_aktif = getKegiatanAktifPerPersonil($semua_riwayat);
+
+$count_kegiatan = [];
+foreach ($kegiatan_aktif as $id => $keg) {
+    if (!isset($count_kegiatan[$keg])) {
+        $count_kegiatan[$keg] = 0;
+    }
+    $count_kegiatan[$keg]++;
+}
+
 foreach ($semua_personil as &$p) {
     $p['alasan_keluar'] = ''; 
     $p['barang_dipinjam'] = []; 
+    $p['kegiatan_aktif_filter'] = $kegiatan_aktif[$p['id_anggota']] ?? '';
     
     if ($p['senjata'] && $p['senjata']['status_lokasi'] == 'Dibawa Bertugas') {
         $target_tx_id = null;
@@ -410,6 +423,30 @@ unset($p);
         </div>
     </div>
 
+    <div class="mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex-shrink-0">
+        <h2 class="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wider flex items-center gap-2">
+            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            Kegiatan Yang Sedang Berjalan
+        </h2>
+        <div class="flex flex-wrap gap-2" id="filter-kegiatan-container">
+            <button onclick="setFilterKegiatan('')" id="btn-keg-semua" class="kegiatan-btn px-3 py-1.5 rounded-full text-xs font-bold bg-blue-600 text-white border border-blue-600 transition-colors">Semua Data</button>
+            
+            <?php foreach($jenis_pinjaman_data as $jp): 
+                $nama_keg = $jp['nama'];
+                $jml = $count_kegiatan[$nama_keg] ?? 0;
+                $hideClass = $jml == 0 ? 'opacity-60 bg-gray-50' : 'bg-white text-gray-700 hover:bg-gray-100 border-gray-300 shadow-sm';
+            ?>
+                <button onclick="setFilterKegiatan('<?= htmlspecialchars($nama_keg) ?>')" class="kegiatan-btn px-3 py-1.5 rounded-full text-xs font-medium border <?= $hideClass ?> transition-colors flex items-center gap-1.5" data-kegiatan="<?= htmlspecialchars($nama_keg) ?>">
+                    <?= htmlspecialchars($nama_keg) ?>
+                    <?php if($jml > 0): ?>
+                        <span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold"><?= $jml ?></span>
+                    <?php endif; ?>
+                </button>
+            <?php endforeach; ?>
+        </div>
+        <input type="hidden" id="active-kegiatan-filter" value="">
+    </div>
+
     <div class="bg-white border border-gray-200 rounded-lg shadow-sm w-full flex-1 flex flex-col min-h-0 overflow-hidden">
         <div class="overflow-auto custom-scroll flex-1 w-full h-full">
             <table class="w-full text-left text-sm whitespace-nowrap min-w-max relative" id="tabel-utama-personil">
@@ -435,8 +472,9 @@ unset($p);
 
                         $alasan = $p['alasan_keluar'] ?? '';
                         $brg_dipinjam_str = implode('||', $p['barang_dipinjam']); 
+                        $kegiatanFilterData = htmlspecialchars($p['kegiatan_aktif_filter']);
                     ?>
-                    <tr class="hover:bg-blue-50/30 transition-colors baris-data">
+                    <tr class="hover:bg-blue-50/30 transition-colors baris-data" data-kegiatan="<?= $kegiatanFilterData ?>">
                         <td class="px-4 md:px-5 py-2.5">
                             <p class="font-bold text-blue-600 hover:text-blue-800 cursor-pointer underline-offset-2 hover:underline transition-colors nama-anggota" 
                                onclick="bukaProfil('<?= $p['id_anggota'] ?>', '<?= addslashes($p['nama']) ?>', '<?= $p['nrp'] ?>', '<?= addslashes($p['satuan']) ?>', '<?= $p['senjata'] ? addslashes($p['senjata']['jenis_senjata']) : '-' ?>', '<?= $p['senjata'] ? $p['senjata']['nomor_seri'] : '-' ?>', '<?= $p['senjata'] ? $p['senjata']['status_lokasi'] : 'Kosong' ?>', '<?= addslashes($pkt) ?>', '<?= addslashes($sz_baju) ?>', '<?= addslashes($sz_celana) ?>', '<?= addslashes($sz_tk) ?>', '<?= addslashes($sz_sepatu) ?>', '<?= addslashes($hp) ?>', '<?= addslashes($alasan) ?>', '<?= addslashes($brg_dipinjam_str) ?>', '<?= $pt_json ?>')" title="Klik untuk lihat profil lengkap">
@@ -454,7 +492,7 @@ unset($p);
                                 <p class="font-bold text-gray-800 text-xs senjata-anggota"><?= $p['senjata']['jenis_senjata'] ?></p>
                                 <p class="text-gray-500 text-[10px] font-mono mt-0.5 mb-1.5 seri-senjata">SN: <?= $p['senjata']['nomor_seri'] ?></p>
                                 <a href="cetak_qr.php?id=<?= $p['senjata']['nomor_seri'] ?>&nama=<?= urlencode($p['senjata']['jenis_senjata']) ?>&tipe=senjata" target="_blank" class="inline-flex items-center gap-1 text-gray-500 hover:text-gray-800 font-medium text-[9px] px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded transition-colors">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Cetak QR
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg Cetak QR
                                 </a>
                             <?php else: ?>
                                 <p class="text-gray-400 italic text-[10px] mb-1">Utama: Belum didata</p>
@@ -796,10 +834,8 @@ unset($p);
       const dbLogistik = <?= $json_logistik ?>;
       let profilAktifId = null;
 
-      // --- LOGIKA FORM PINJAMAN TETAP (MASTER BARANG) ---
       function hapusBarisPT(btn) {
           btn.parentElement.remove();
-          // Cek kalau container kosong
           let containerAdd = document.getElementById('container-pt-tambah');
           if(containerAdd && containerAdd.children.length === 1 && containerAdd.children[0].id === 'empty-pt-tambah'){
               document.getElementById('empty-pt-tambah').classList.remove('hidden');
@@ -843,21 +879,52 @@ unset($p);
           });
       }
 
-      // --- LIVE SEARCH ---
+      function setFilterKegiatan(kegiatan) {
+          document.getElementById('active-kegiatan-filter').value = kegiatan;
+
+          document.querySelectorAll('.kegiatan-btn').forEach(btn => {
+              btn.classList.remove('bg-blue-600', 'text-white', 'border-blue-600', 'font-bold');
+              btn.classList.add('bg-white', 'text-gray-700', 'border-gray-300', 'font-medium');
+          });
+
+          let selectedBtn = kegiatan === '' ? document.getElementById('btn-keg-semua') : document.querySelector(`.kegiatan-btn[data-kegiatan="${kegiatan}"]`);
+          if(selectedBtn) {
+              selectedBtn.classList.remove('bg-white', 'text-gray-700', 'border-gray-300', 'font-medium');
+              selectedBtn.classList.add('bg-blue-600', 'text-white', 'border-blue-600', 'font-bold');
+          }
+
+          cariPersonil();
+      }
+
       function cariPersonil() {
           let input = document.getElementById("pencarian-personil").value.toLowerCase();
+          let filterKegiatan = document.getElementById("active-kegiatan-filter").value;
+          
           let barisData = document.querySelectorAll(".baris-data");
           let ditemukan = false;
+          
           barisData.forEach(function(baris) {
               let teksNama = baris.querySelector(".nama-anggota").innerText.toLowerCase();
               let teksNrp = baris.querySelector(".nrp-anggota").innerText.toLowerCase();
-              if (teksNama.includes(input) || teksNrp.includes(input)) {
-                  baris.style.display = ""; ditemukan = true;
-              } else { baris.style.display = "none"; }
+              let kegiatanBaris = baris.getAttribute('data-kegiatan') || '';
+
+              let matchTeks = (teksNama.includes(input) || teksNrp.includes(input));
+              let matchKegiatan = (filterKegiatan === "" || kegiatanBaris === filterKegiatan);
+
+              if (matchTeks && matchKegiatan) {
+                  baris.style.display = ""; 
+                  ditemukan = true;
+              } else { 
+                  baris.style.display = "none"; 
+              }
           });
+          
           let pesanKosong = document.getElementById("baris-tidak-ditemukan");
-          if (!ditemukan && input !== "") { pesanKosong.classList.remove("hidden"); } 
-          else { pesanKosong.classList.add("hidden"); }
+          if (!ditemukan) { 
+              pesanKosong.classList.remove("hidden"); 
+          } else { 
+              pesanKosong.classList.add("hidden"); 
+          }
       }
 
       function toggleModal(modalID){
@@ -880,7 +947,6 @@ unset($p);
           document.getElementById('edit_nomor_seri').value = nomor_seri;
 
           renderPtDiEdit(pt_json_str);
-
           toggleModal('modal-edit');
       }
 
@@ -903,7 +969,6 @@ unset($p);
           document.getElementById('profil-senjata').innerText = jenis_senjata;
           document.getElementById('profil-seri').innerText = nomor_seri !== '-' ? 'SN: ' + nomor_seri : 'Belum didata';
 
-          // RENDER PINJAMAN TETAP (DARI MASTER BARANG)
           let pts = pt_json_str ? JSON.parse(pt_json_str) : [];
           let textPT = document.getElementById('profil-pinjaman-tetap');
           if (pts.length > 0) {
@@ -914,7 +979,6 @@ unset($p);
               textPT.className = "mt-2 text-xs bg-gray-50 border border-gray-100 rounded p-2 leading-relaxed";
           }
 
-          // LOGIKA STATUS GUDANG BERIKUT DAFTAR BARANG
           let statusHtml = '';
           if(status_lokasi === 'Di Gudang') {
               statusHtml = '<span class="inline-flex rounded bg-green-100 px-3 py-1 text-[10px] font-bold text-green-800 border border-green-200 mt-1">DI GUDANG</span>';
