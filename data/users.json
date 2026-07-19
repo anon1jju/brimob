@@ -1,0 +1,18 @@
+[
+    {
+        "username": "admin",
+        "password": "123",
+        "nama_petugas": "BAGUS OKTAFRIZAL, S.H.",
+        "role": "admin",
+        "pangkat": "BRIGPOL",
+        "nrp": "92100587"
+    },
+    {
+        "username": "jaga",
+        "password": "123",
+        "nama_petugas": "AKMAL",
+        "role": "user",
+        "pangkat": "BRIPDA",
+        "nrp": ""
+    }
+]

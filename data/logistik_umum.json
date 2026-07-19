@@ -1,0 +1,226 @@
+[
+    {
+        "id_barang": "LOG-17120001",
+        "nama_barang": "BODY VEST BRIMOB PUTIH",
+        "kategori": "BODY VEST",
+        "total_stok": 10,
+        "stok_tersedia": 9,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177614982830",
+        "nama_barang": "MAGAZEN AK 101\/102",
+        "kategori": "MAG",
+        "total_stok": 305,
+        "stok_tersedia": 256,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177615017289",
+        "nama_barang": "CALL 5.56X45 MM 4 TJ",
+        "kategori": "Amunisi",
+        "total_stok": 2742,
+        "stok_tersedia": 2422,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177615019581",
+        "nama_barang": "CALL 5.56X45 MM 5 TJ",
+        "kategori": "Amunisi",
+        "total_stok": 1106,
+        "stok_tersedia": 1106,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177615022463",
+        "nama_barang": "CALL 5.56X45 MM KARET",
+        "kategori": "Amunisi",
+        "total_stok": 1790,
+        "stok_tersedia": 1198,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177615024349",
+        "nama_barang": "CALL 5.56X45 MM HAMPA",
+        "kategori": "Amunisi",
+        "total_stok": 3040,
+        "stok_tersedia": 2992,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177615030523",
+        "nama_barang": "CALL 9X19MM TAJAM",
+        "kategori": "Amunisi",
+        "total_stok": 2587,
+        "stok_tersedia": 2587,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177615032653",
+        "nama_barang": "CALL 9X19MM HAMPA",
+        "kategori": "Amunisi",
+        "total_stok": 260,
+        "stok_tersedia": 260,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177615035840",
+        "nama_barang": "CALL 7X62 MM TAJAM",
+        "kategori": "AMUNISI",
+        "total_stok": 324,
+        "stok_tersedia": 324,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177811655515",
+        "nama_barang": "BODY VEST J FORCE 2021",
+        "kategori": "BODY VEST",
+        "total_stok": 40,
+        "stok_tersedia": 38,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177811663442",
+        "nama_barang": "BODY VEST LEVEL III HITAM",
+        "kategori": "BODY VEST",
+        "total_stok": 20,
+        "stok_tersedia": 20,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177811672920",
+        "nama_barang": "BODY VEST KARABINER",
+        "kategori": "BODY VEST",
+        "total_stok": 30,
+        "stok_tersedia": 29,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177811679948",
+        "nama_barang": "HELM KEVLAR J FORCE 2021 VELCRO",
+        "kategori": "BODY VEST",
+        "total_stok": 40,
+        "stok_tersedia": 39,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177811683696",
+        "nama_barang": "HELM KEVLAR MIC 2000 JARING",
+        "kategori": "HELM KEVLAR",
+        "total_stok": 30,
+        "stok_tersedia": 30,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177811688475",
+        "nama_barang": "HELM MIC 2000 POLOS",
+        "kategori": "HELM KEVLAR",
+        "total_stok": 10,
+        "stok_tersedia": 10,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177906783056",
+        "nama_barang": "FIELD BED",
+        "kategori": "FIELD BED",
+        "total_stok": 88,
+        "stok_tersedia": 25,
+        "stok_rusak": 63
+    },
+    {
+        "id_barang": "LOG-177906868536",
+        "nama_barang": "TAS SENPI MOLAY",
+        "kategori": "MATLOG",
+        "total_stok": 44,
+        "stok_tersedia": 44,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177935876422",
+        "nama_barang": "RANSEL 7 HARI",
+        "kategori": "MATLOG",
+        "total_stok": 85,
+        "stok_tersedia": 84,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177935882683",
+        "nama_barang": "RANSEL 3 HARI",
+        "kategori": "MATLOG",
+        "total_stok": 71,
+        "stok_tersedia": 69,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177935894411",
+        "nama_barang": "BORGOL PLASTIK MERAH",
+        "kategori": "MATLOG",
+        "total_stok": 3000,
+        "stok_tersedia": 2998,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-177935901332",
+        "nama_barang": "MANTEL PERTEMPURAN HUTAN HIJAU",
+        "kategori": "MATLOG",
+        "total_stok": 80,
+        "stok_tersedia": 78,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-178036387220",
+        "nama_barang": "KELAMBU FLEKSIBEL 25",
+        "kategori": "MATLOG",
+        "total_stok": 63,
+        "stok_tersedia": 61,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-178036388681",
+        "nama_barang": "SLEEPING BAG 25",
+        "kategori": "MATLOG",
+        "total_stok": 63,
+        "stok_tersedia": 62,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-178036468698",
+        "nama_barang": "GOOGLE",
+        "kategori": "MATLOG",
+        "total_stok": 54,
+        "stok_tersedia": 53,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-178036472345",
+        "nama_barang": "KOPEL SET TACTIKAL HITAM",
+        "kategori": "MATLOG",
+        "total_stok": 40,
+        "stok_tersedia": 39,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-178036483644",
+        "nama_barang": "JAS HUJAN ABU2",
+        "kategori": "MATLOG",
+        "total_stok": 30,
+        "stok_tersedia": 29,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-178036502095",
+        "nama_barang": "BATON STICK BIASA",
+        "kategori": "MATLOG",
+        "total_stok": 80,
+        "stok_tersedia": 80,
+        "stok_rusak": 0
+    },
+    {
+        "id_barang": "LOG-178059495316",
+        "nama_barang": "BODY VEST TULISAN POLISI\/BRIMOB KUNING",
+        "kategori": "MATLOG",
+        "total_stok": 24,
+        "stok_tersedia": 24,
+        "stok_rusak": 0
+    }
+]
